@@ -1,11 +1,14 @@
 package logic;
 
 import entity.*;
+import jdk.nashorn.internal.runtime.logging.Logger;
 
 import java.util.*;
 import java.util.stream.Collectors;
 
+@Logger
 public class Logic {
+
     public static boolean isPossiblePlaceFigureToPointOnBoard(Board board, Point point, Figure figure) {
         List<State> collect = getAllFigureStatesSuccessForPoint(board, point, figure);
         if (collect.isEmpty()) {
@@ -18,11 +21,6 @@ public class Logic {
         return figure.getStates().stream()
                 .filter(state -> isPossiblePlaceStateToPointOnBoard(board, point, state))
                 .collect(Collectors.toList());
-    }
-
-    public static boolean isEmptySpaceEnough(Board board, Set<Figure> figures) {
-        // Находим пустые места и проверяем что их можно заполнить оставшимися фигурами
-        return true;
     }
 
     public static boolean isPossiblePlaceStateToPointOnBoard(Board board, Point point, State state) {
@@ -62,8 +60,8 @@ public class Logic {
         return point;
     }
 
-    public static Set<Point> getAllFreePoints(Board board) {
-        Set<Point> points = new HashSet<>();
+    public static List<Point> getAllFreePoints(Board board) {
+        List<Point> points = new ArrayList<>();
         char[][] innerState = board.getState().getInnerState();
         for (int i = 0; i < innerState.length; i++) {
             for (int j = 0; j < innerState[0].length; j++) {
@@ -74,6 +72,17 @@ public class Logic {
         }
 
         return points;
+    }
+
+    public static Point getFirstFreePoint(Board board) {
+        char[][] innerState = board.getState().getInnerState();
+        for (int i = 0; i < innerState.length; i++)
+            for (int j = 0; j < innerState[0].length; j++) {
+                if (innerState[i][j] == 'O') {
+                    return new Point(i, j);
+                }
+            }
+        return null;
     }
 
     public static Board getBoardWithState(Board board, Point point, State state) {
@@ -93,59 +102,93 @@ public class Logic {
         return new Board(new State(boardState));
     }
 
-    private static int count = 1;
-
-    public static Set<ChainElement> getAnswers(Set<ChainElement> elements, Board board, List<Figure> figures) {
-
+    // Из этой мапки нужно удалять все ненужное
+    public static List<Element> getElements(Board board, List<Figure> figures) {
+        List<Element> elements = new ArrayList<>();
         // Получаем все свободные точки
-        Set<Point> allFreePoints = Logic.getAllFreePoints(board);
-
-        // Берем фигуру
-        for (Figure figure : figures) {
-            // Берем точку
-            for (Point point : allFreePoints) {
-                // Берем все возможные states для этой доски, точки и фигуры
-                List<State> states = Logic.getAllFigureStatesSuccessForPoint(board, point, figure);
-
-                // Если точки еще есть, а вариантов уже нет, нужно удалить такую цепочку
-                // Нам нужно создать цепочки
-
-                for (State state : states) {
-                    Board newBoard = Logic.getBoardWithState(board, point, state);
-                    elements.add(new ChainElement(board, newBoard));
-
-                    List<Figure> newFigures = new ArrayList<>(figures);
-                    newFigures.remove(figure);
-
-                    getAnswers(elements, newBoard, newFigures);
+        List<Point> allFreePoints = getAllFreePoints(board);
+        Point point;
+        Figure figure;
+        State state;
+        // и для каждой точки получаем доступные states
+        for (int i = 0; i < allFreePoints.size(); i++) {
+            point = allFreePoints.get(i);
+            for (int j = 0; j < figures.size(); j++) {
+                figure = figures.get(j);
+                List<State> allFigureStatesSuccessForPoint = getAllFigureStatesSuccessForPoint(board, point, figure);
+                for (int k = 0; k < allFigureStatesSuccessForPoint.size(); k++) {
+                    state = allFigureStatesSuccessForPoint.get(k);
+                    elements.add(new Element(point, figure, state));
                 }
             }
         }
+
         return elements;
     }
 
-    public static List<Board> getFinalResult(List<Board> boards, Set<ChainElement> answers, Board parent) {
-        Optional<ChainElement> board;
-        if (parent == null) {
-            // Находим полностью заполненный элемент
-            board = answers.stream()
-                    .filter(item -> isFull(item.getChild().getState()))
-                    .findFirst();
-        } else {
-            board = answers.stream()
-                    .filter(answer -> answer.getChild().equals(parent))
-                    .findFirst();
+    public static Element finalResult;
+
+    public static void getSolutions(Element parent, Board board, List<Element> elements) {
+
+        // Берем первую пустую точку
+        Point firstFreePoint = getFirstFreePoint(board);
+
+//        log.println("Берем точку " + firstFreePoint);
+        // Берем коллекцию элементов, которые можно разместить в этой точке
+        List<Element> collect = elements.stream()
+                .filter(element -> element.getPoint().equals(firstFreePoint))
+                .collect(Collectors.toList());
+
+        if (parent != null) {
+//            log.println("Наш родитель " + parent);
+            parent.setChildren(collect);
+            collect.stream()
+                    .filter(Element::isCanChangeParent)
+                    .forEach(element -> element.setParent(parent));
+
         }
 
 
-        // Получаем его родителя
-        if (board.isPresent()) {
-            ChainElement element = board.get();
-            boards.add(element.getChild());
-            getFinalResult(boards, answers, element.getParent());
+        Board newBoard;
+        for (Element element : collect) {
+            // Получаем новую доску
+//            log.println("Берем элемент " + element);
+            if (isPossiblePlaceStateToPointOnBoard(board, element.getPoint(), element.getState())) {
+                newBoard = getBoardWithState(board, element.getPoint(), element.getState());
+            } else {
+//                log.println("Невозможно поместить стейт " + element.getState() + "на данную доску " + board + "\n");
+                continue;
+            }
+//            log.println("Наша новая доска " + newBoard);
+            if (isFull(newBoard.getState())) {
+//                System.out.println("Неужели!");
+                finalResult = element;
+                Element previousElement = element;
+                while (previousElement.getParent() != null) {
+                    previousElement.setCanChangeParent(false);
+                    previousElement = previousElement.getParent();
+                }
+                break;
+            }
+
+            // Фильтруем список наших элементов, чтобы не было нашей точки и нашей фигуры
+            List<Element> newElements = elements.stream()
+                    .filter(el -> !el.getPoint().equals(element.getPoint()))
+                    .filter(el -> !el.getFigure().equals(element.getFigure()))
+                    .collect(Collectors.toList());
+
+            // Уходим в рекурсию
+            getSolutions(element, newBoard, newElements);
+        }
+    }
+
+    public static void printSolution(Board board, Element element) {
+        while (element.getParent() != null) {
+            Board boardWithState = getBoardWithState(board, element.getPoint(), element.getState());
+            printDifferentStates(board.getState(), boardWithState.getState());
+            element = element.getParent();
         }
 
-        return boards;
     }
 
     public static boolean isFull(State state) {
@@ -158,16 +201,6 @@ public class Logic {
             }
         }
         return true;
-    }
-
-    public static void printFinalResult(List<Board> finalResult) {
-        for (int i = 0; i < finalResult.size(); i++) {
-            if (i < finalResult.size() - 1) {
-                printDifferentStates(finalResult.get(i).getState(), finalResult.get(i + 1).getState());
-            } else {
-                printDifferentStates(finalResult.get(i).getState(), finalResult.get(i).getState());
-            }
-        }
     }
 
     public static void printDifferentStates(State origin, State next) {
@@ -184,133 +217,5 @@ public class Logic {
             System.out.println();
         }
         System.out.println();
-    }
-
-    public static int getMinPart(State state) {
-        char[][] innerState = state.getInnerState();
-        List<List<Part>> list = new ArrayList<>();
-        for (int i = 0; i < innerState.length; i++) {
-            list.add(i, new ArrayList<>());
-        }
-
-
-        for (int i = 0; i < innerState.length; i++) {
-            for (int j = 0; j < innerState[0].length; j++) {
-                if (innerState[i][j] == 'O') {
-                    int start = j;
-                    while (j + 1 < innerState[0].length) {
-                        j++;
-                        if (innerState[i][j] == 'X') {
-                            list.get(i).add(new Part(start, j - 1, j - start));
-                            break;
-                        }
-                        if (j == innerState[0].length - 1) {
-                            if (innerState[i][j] == 'O') {
-                                list.get(i).add(new Part(start, j, j - start + 1));
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        int count = 1;
-        for (int i = 0; i < list.size(); i++) {
-            List<Part> parts = list.get(i);
-            if (!parts.isEmpty()) {
-                for (int j = 0; j < parts.size(); j++) {
-                    parts.get(j).setId(count++);
-                }
-                break;
-            }
-        }
-
-        for (int i = 0; i < list.size(); i++) {
-            List<Part> parts = list.get(i);
-
-            if (i + 1 < list.size() && !parts.isEmpty()) {
-                List<Part> partsNextRow = list.get(i + 1);
-
-                if (partsNextRow.isEmpty()) {
-                    for (int j = 0; j < parts.size(); j++) {
-                        Part part = parts.get(j);
-                        if (part.getId() > count) {
-                            part.setId(count++);
-                        }
-                    }
-                }
-
-                if (parts.isEmpty()) {
-                    continue;
-                }
-
-                for (int j = 0; j < partsNextRow.size(); j++) {
-                    for (int k = 0; k < parts.size(); k++) {
-                        Part partNext = partsNextRow.get(j);
-                        Part part = parts.get(k);
-                        // Если есть пересечения
-                        if (isMatches(part, partNext)) {
-                            int id = part.getId();
-                            int id1 = partNext.getId();
-                            int min = id < id1 ? id : id1;
-                            part.setId(min);
-                            partNext.setId(min);
-                        } else {
-                            if (partNext.getId() > count) {
-                                partNext.setId(count++);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        if (list.size() >= 2) {
-            List<Part> last = list.get(list.size() - 1);
-            List<Part> previous = list.get(list.size() - 2);
-            if (previous.isEmpty()) {
-                for (int i = 0; i < last.size(); i++) {
-                    last.get(i).setId(count++);
-                }
-            }
-        }
-
-        Map<Integer, Integer> map = new HashMap<>();
-
-        list.stream()
-                .flatMap(Collection::stream)
-                .forEach(item -> {
-                    map.merge(item.getId(), item.getSize(), Integer::sum);
-                });
-
-        Optional<Integer> min = map.values().stream()
-                .min(Integer::compareTo);
-
-        return min.get();
-    }
-
-    private static boolean isMatches(Part part, Part partNext) {
-        int start = part.getStart();
-        int end = part.getEnd();
-        int start1 = partNext.getStart();
-        int end1 = partNext.getEnd();
-        if ((start >= start1 && start <= end1)
-                || (end >= start1 && end <= end1)) {
-            return true;
-        }
-        return false;
-    }
-
-    public static boolean checkRight(Board board, List<Figure> figures) {
-        int size = getAllFreePoints(board).size();
-        Optional<Integer> reduce = figures.stream()
-                .map(Figure::getSize)
-                .reduce(Integer::sum);
-        return reduce.filter(integer -> size == integer).isPresent();
-    }
-
-    boolean canFillEmptySpaces(Board board, List<Figure> figures) {
-
-        return true;
     }
 }

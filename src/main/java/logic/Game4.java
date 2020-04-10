@@ -1,14 +1,8 @@
 package logic;
 
-import entity.Board;
-import entity.ChainElement;
-import entity.Figure;
-import entity.State;
+import entity.*;
 
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 
 public class Game4 {
 
@@ -32,13 +26,8 @@ public class Game4 {
         figures.add(Figure.YELLOW);
         figures.add(Figure.LIGHT_BLUE);
 
-
-        System.out.println("Trying to get answers");
-        Set<ChainElement> answers = Logic.getAnswers(new HashSet<>(), board, figures);
-        System.out.println("Trying to get final result");
-        List<Board> finalResult = Logic.getFinalResult(new ArrayList<>(), answers, null);
-        finalResult.add(board);
-
-        Logic.printFinalResult(finalResult);
+        List<Element> elements = Logic.getElements(board, figures);
+        Logic.getSolutions(null, board, elements);
+        System.out.println(Logic.finalResult);
     }
 }
